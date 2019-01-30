@@ -1,9 +1,12 @@
 #!/usr/bin/env python
 #encoding: utf8
 
-import rospy, cv2
+import rospy, cv2, math
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
+from geometry_msgs.msg import Twist
+from std_srvs.srv import Trigger
+
 
 class FaceToFace():
 
@@ -13,6 +16,13 @@ class FaceToFace():
         self.image_org = None
 
         self.pub = rospy.Publisher("face", Image, queue_size=1)
+
+        self.cmd_vel = rospy.Publisher("/cmd_vel", Twist, queue_size=1)
+        rospy.wait_for_service("/motor_on")
+        rospy.wait_for_service("/motor_off")
+        rospy.on_shutdown(rospy.ServiceProxy("/motor_off", Trigger).call)
+        rospy.ServiceProxy("motor_on", Trigger).call()
+
 
     def get_image(self, img):
         try:
@@ -42,8 +52,27 @@ class FaceToFace():
 
         r = face[0]
         self.monitor(r, org)
-        return "detected"
+        return r
 
+    def rot_vel(self):
+        r = self.detect_face()
+        if r is None:
+            return 0.0
+
+        wid = self.image_org.shape[1]/2
+        pos_x_rate = (r[0]+r[2]/2-wid) * 1.0/wid
+        if abs(pos_x_rate) < 0.1:
+            rot = 0.0
+        else:
+            rot = -0.25*pos_x_rate*math.pi              # rad/s
+        rospy.loginfo("detected pos_x_rate={:1.3f} rot={:1.3f}".format(pos_x_rate, rot))
+        return rot
+
+    def control(self):
+        m = Twist()
+        m.linear.x = 0.0
+        m.angular.z = self.rot_vel()
+        self.cmd_vel.publish(m)
 
 if __name__ == "__main__":
     rospy.init_node("face_to_face")
@@ -51,5 +80,5 @@ if __name__ == "__main__":
 
     rate = rospy.Rate(10)
     while not rospy.is_shutdown():
-        rospy.loginfo(fd.detect_face())
+        fd.control()
         rate.sleep()
