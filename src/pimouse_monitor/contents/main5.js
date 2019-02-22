@@ -94,3 +94,4 @@ $('#touchmotion').on('click', function(e){
 });
 
 setInterval(pubMotorValues, 100);
+
